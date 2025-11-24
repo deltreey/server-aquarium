@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Mini Aquarium</title>
-    <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body {
             font-family: 'Inter', sans-serif;
@@ -165,7 +164,7 @@
             <div class="table-leg"></div>
         </div>
     </div>
-
+    <script src="https://cdn.jsdelivr.net/npm/js-yaml@4.1.0/dist/js-yaml.min.js"></script>
     <script>
         // canvas element and 2D rendering context
         const canvas = document.getElementById('aquariumCanvas');
@@ -176,6 +175,39 @@
         const messageBox = document.getElementById('messageBox');
         const mainWrapper = document.getElementById('mainWrapper');
         const aquariumTable = document.getElementById('aquariumTable');
+
+        class Server {
+            constructor(id, name, url) {
+                this.id = id;
+                this.name = name;
+                this.url = url;
+            }
+        }
+        let servers = [];
+
+        async function loadServersFromYaml() {
+            const res = await fetch('/servers.yaml', { cache: 'no-store' });
+            if (!res.ok) {
+                throw new Error(`Failed to load servers.yaml: HTTP ${res.status}`);
+            }
+
+            const yamlText = await res.text();
+            const data = jsyaml.load(yamlText); // expects { servers: [ ... ] }
+
+            if (!data || !Array.isArray(data.servers)) {
+                throw new Error('servers.yaml missing top-level "servers" array');
+            }
+
+            return data.servers.map(entry => {
+                // adapt these to whatever fields you actually have in YAML
+                const id   = entry.id;
+                const name = entry.name;
+                const url  = entry.host || '';
+                let result = new Server(id, name, url);
+                return result;
+            });
+        }
+
 
         // Oxygen tank properties
         const oxygenTank = {
@@ -222,7 +254,7 @@
 
         // --- Fish Class ---
         class Fish {
-            constructor(x, y, size, emoji, speed) {
+            constructor(x, y, size, emoji, speed, server) {
                 this.x = x;
                 this.y = y;
                 this.size = size;
@@ -237,66 +269,90 @@
                 this.targetY = null;
                 this.fullness = 100;
                 this.turnFactor = 0.05;
+                this.server = server
+                this.isAlive = true;
             }
 
             update() {
-                // Food Following method
-                if (this.targetX !== null && this.targetY !== null) {
-                    const dx = this.targetX - this.x;
-                    const dy = this.targetY - this.y;
-                    const distance = Math.sqrt(dx * dx + dy * dy);
+                if (this.isAlive) {
+                    // Food Following method
+                    if (this.targetX !== null && this.targetY !== null) {
+                        const dx = this.targetX - this.x;
+                        const dy = this.targetY - this.y;
+                        const distance = Math.sqrt(dx * dx + dy * dy);
 
-                    if (distance > 5) {
-                        this.x += (dx / distance) * this.speed * 1.5; 
-                        this.y += (dy / distance) * this.speed * 1.5;
-                        this.directionX = dx > 0 ? 1 : -1; 
+                        if (distance > 5) {
+                            this.x += (dx / distance) * this.speed * 1.5;
+                            this.y += (dy / distance) * this.speed * 1.5;
+                            this.directionX = dx > 0 ? 1 : -1;
+                        } else {
+                            this.targetX = null;
+                            this.targetY = null;
+                            this.speed = this.baseSpeed;
+                        }
                     } else {
-                        this.targetX = null;
-                        this.targetY = null;
-                        this.speed = this.baseSpeed; 
-                    }
-                } else {
-                    // Normal random movement
-                    this.x += this.speed * this.directionX;
-                    this.y += this.speed * this.directionY;
+                        // Normal random movement
+                        this.x += this.speed * this.directionX;
+                        this.y += this.speed * this.directionY;
 
-                 
-                    const margin = this.size; 
+
+                        const margin = this.size;
+                        if (this.x < margin) {
+                            this.directionX += this.turnFactor;
+                        } else if (this.x > canvas.width - margin) {
+                            this.directionX -= this.turnFactor;
+                        }
+
+                        if (this.y < margin) {
+                            this.directionY += this.turnFactor;
+                        } else if (this.y > canvas.height - margin) {
+                            this.directionY -= this.turnFactor;
+                        }
+
+                        const magnitude = Math.sqrt(this.directionX * this.directionX + this.directionY * this.directionY);
+                        if (magnitude > 0) {
+                            this.directionX /= magnitude;
+                            this.directionY /= magnitude;
+                        }
+                    }
+                    this.tailAngle += this.tailSpeed;
+
+                    this.fullness = Math.max(0, this.fullness - 0.01);
+                    if (this.fullness < 20 && this.targetX === null) {
+                        this.speed = this.baseSpeed * 2;
+                    } else if (this.targetX === null) {
+                        this.speed = this.baseSpeed;
+                    }
+                }
+                else {
+                    // dead fish
+                    this.speed = this.baseSpeed / 5;
+                    this.x += this.speed * this.directionX;
+                    const margin = this.size;
+                    // float around
                     if (this.x < margin) {
                         this.directionX += this.turnFactor;
                     } else if (this.x > canvas.width - margin) {
                         this.directionX -= this.turnFactor;
                     }
 
-                    if (this.y < margin) {
-                        this.directionY += this.turnFactor;
-                    } else if (this.y > canvas.height - margin) { 
-                        this.directionY -= this.turnFactor;
+                    // rise toward the surface
+                    const surfaceY = this.size; // "ceiling" just below the top
+                    if (this.y > surfaceY) {
+                        this.y -= this.speed;      // move up a bit each frame
+                    } else {
+                        // gentle bob around the surface
+                        this.y = surfaceY + Math.sin(Date.now() * 0.005 + this.x * 0.1) * 2;
                     }
-
-                    const magnitude = Math.sqrt(this.directionX * this.directionX + this.directionY * this.directionY);
-                    if (magnitude > 0) {
-                        this.directionX /= magnitude;
-                        this.directionY /= magnitude;
-                    }
-                }
-
-                this.tailAngle += this.tailSpeed;
-
-                this.fullness = Math.max(0, this.fullness - 0.01);
-                if (this.fullness < 20 && this.targetX === null) {
-                     this.speed = this.baseSpeed * 2;
-                } else if (this.targetX === null) {
-                    this.speed = this.baseSpeed;
                 }
             }
 
             draw() {
                 ctx.save();
                 ctx.translate(this.x, this.y);
-                if (this.directionX < 0) {
-                    ctx.scale(-1, 1);
-                }
+                let scaleX = this.directionX < 0 ? 1 : -1;
+                let scaleY = this.isAlive ? 1 : -1;
+                ctx.scale(scaleX, scaleY);
 
                 ctx.font = `${this.size}px sans-serif`; 
                 ctx.textAlign = 'center';
@@ -522,6 +578,29 @@
             ctx.fill();
         }
 
+        async function refreshServerStates() {
+            const res = await fetch("/server-status.json", { cache: "no-store" });
+            if (!res.ok) {
+                fishes.forEach(fish => {
+                    fish.isActive = false;
+                })
+            };
+            const data = await res.json();
+            const statuses = data.statuses;
+
+            if (Date.now()/1000 - data.generated_at > 60) {
+                fishes.forEach(fish => {
+                    fish.isAlive = false;
+                })
+            }
+            else {
+                fishes.forEach(fish => {
+                    const st = statuses[fish.server.id];
+                    if (!st) return;
+                    fish.isAlive = (st === "up");
+                });
+            }
+        }
 
         // --- Game State ---
         const fishes = [];
@@ -534,15 +613,19 @@
         // Initialize elements
         function initAquarium() {
             // Create fish using emojis
-            const fishEmojis = ['🐠', '🐡', '🐟', '🐙', '🦑', '🦐']; 
-            for (let i = 0; i < 10; i++) {
-                const size = 30 + Math.random() * 20; 
-                const x = Math.random() * canvas.width;
-                const y = Math.random() * canvas.height;
-                const emoji = fishEmojis[Math.floor(Math.random() * fishEmojis.length)];
-                const speed = 0.5 + Math.random() * 0.5; 
-                fishes.push(new Fish(x, y, size, emoji, speed));
-            }
+            const fishEmojis = ['🐠', '🐡', '🐟', '🐙', '🦑', '🦐'];
+            loadServersFromYaml().then((result) => {
+                console.log(result);
+                servers = result;
+                for (let i = 0; i < servers.length; i++) {
+                    const size = 30 + Math.random() * 20;
+                    const x = Math.random() * canvas.width;
+                    const y = Math.random() * canvas.height;
+                    const emoji = fishEmojis[Math.floor(Math.random() * fishEmojis.length)];
+                    const speed = 0.5 + Math.random() * 0.5;
+                    fishes.push(new Fish(x, y, size, emoji, speed, servers[i]));
+                }
+            });
 
             for (let i = 0; i < 12; i++) { 
                 const x = Math.random() * canvas.width;
@@ -659,7 +742,8 @@
         window.onload = function() {
             initAquarium();
             resizeCanvas(); 
-            animate(0); 
+            animate(0);
+            setInterval(refreshServerStates, 5000);
             foodLevelDisplay.style.height = `${foodInBottle}%`; 
         };
     </script>
