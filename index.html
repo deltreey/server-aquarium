@@ -1,0 +1,773 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Server Aquarium</title>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #1a202c; 
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            overflow: hidden; 
+        }
+        .main-wrapper {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+            padding: 20px 20px 60px 20px; 
+            background-color: #2d3748;
+            border-radius: 16px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+            position: relative;
+            height: 100vh; 
+            justify-content: center; 
+        }
+        canvas {
+            background-color: #001f3f; 
+            border: 4px solid #4a5568;
+            border-radius: 12px;
+            box-shadow: 0 0 40px rgba(0, 191, 255, 0.5); 
+            display: block;
+            position: relative; 
+            z-index: 2; 
+        }
+        .title {
+            color: #e2e8f0;
+            font-size: 2.5rem;
+            font-weight: bold;
+            text-align: center;
+            text-shadow: 0 0 15px rgba(0, 191, 255, 0.8);
+        }
+        .description {
+            color: #cbd5e0;
+            font-size: 1.1rem;
+            text-align: center;
+            max-width: 600px;
+        }
+        .controls {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin-bottom: 10px;
+            z-index: 3; 
+        }
+        .food-bottle {
+            width: 40px;
+            height: 60px;
+            background-color: #8B4513; 
+            border: 2px solid #5A2D0C;
+            border-radius: 5px;
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-end;
+            align-items: center;
+            padding-bottom: 5px;
+        }
+        .food-bottle::before {
+            content: '';
+            position: absolute;
+            top: -10px;
+            width: 20px;
+            height: 20px;
+            background-color: #8B4513;
+            border: 2px solid #5A2D0C;
+            border-radius: 5px 5px 0 0;
+        }
+        .food-level {
+            width: 80%;
+            height: 70%;
+            background-color: #FFD700;
+            border-radius: 3px;
+            transition: height 0.5s ease-out;
+        }
+        .action-button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: bold;
+            transition: background-color 0.3s ease, transform 0.1s ease;
+            box-shadow: 0 4px #2E8B57;
+        }
+        .action-button:hover {
+            background-color: #45a049;
+        }
+        .action-button:active {
+            transform: translateY(2px);
+            box-shadow: 0 2px #2E8B57;
+        }
+        .message-box {
+            background-color: rgba(0, 0, 0, 0.7);
+            color: #fff;
+            padding: 10px 20px;
+            border-radius: 8px;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 10;
+            font-size: 1.2rem;
+            text-align: center;
+            box-shadow: 0 0 15px rgba(255, 255, 255, 0.5);
+            display: none; 
+        }
+        .aquarium-table {
+            background-color: #6B4226; 
+            width: 100%;
+            height: 100px;
+            border-radius: 0 0 12px 12px;
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            z-index: 1;
+            box-shadow: 0 8px 15px rgba(0, 0, 0, 0.4);
+            display: flex;
+            justify-content: space-around;
+            align-items: flex-start;
+            padding-top: 10px;
+        }
+        .table-leg {
+            width: 20px;
+            height: 80px; 
+            background-color: #4A2B19;
+            border-radius: 5px;
+            box-shadow: inset 0 0 5px rgba(0,0,0,0.3);
+        }
+    </style>
+</head>
+<body>
+    <div class="main-wrapper" id="mainWrapper">
+        <h1 class="title">Server Aquarium</h1>
+        <p class="description">Down Servers are dead fish!</p>
+        <div class="controls">
+            <div class="food-bottle">
+                <div id="foodLevel" class="food-level"></div>
+            </div>
+            <button id="dropFoodButton" class="action-button">Drop Food</button>
+            <button id="refillFoodButton" class="action-button">Refill Food</button>
+        </div>
+        <canvas id="aquariumCanvas"></canvas>
+        <div id="messageBox" class="message-box"></div>
+        <div class="aquarium-table" id="aquariumTable">
+            <div class="table-leg"></div>
+            <div class="table-leg"></div>
+        </div>
+    </div>
+    <script>
+        // canvas element and 2D rendering context
+        const canvas = document.getElementById('aquariumCanvas');
+        const ctx = canvas.getContext('2d');
+        const dropFoodButton = document.getElementById('dropFoodButton');
+        const refillFoodButton = document.getElementById('refillFoodButton');
+        const foodLevelDisplay = document.getElementById('foodLevel');
+        const messageBox = document.getElementById('messageBox');
+        const mainWrapper = document.getElementById('mainWrapper');
+        const aquariumTable = document.getElementById('aquariumTable');
+
+        class Server {
+            constructor(id, name) {
+                this.id = id;
+                this.name = name;
+            }
+        }
+        let servers = [];
+
+        async function loadServersFromYaml() {
+            const res = await fetch('/server-status.json', { cache: 'no-store' });
+            if (!res.ok) {
+                throw new Error(`Failed to load servers.json: HTTP ${res.status}`);
+            }
+
+            const data = await res.json();
+
+            if (!data || !Array.isArray(data.statuses)) {
+                throw new Error('server-status.json missing top-level "statuses" array');
+            }
+
+            return data.statuses.map(entry => {
+                // adapt these to whatever fields you actually have in YAML
+                const id   = entry.id;
+                const name = entry.name;
+                return new Server(id, name);
+            });
+        }
+
+
+        // Oxygen tank properties
+        const oxygenTank = {
+            width: 40,
+            height: 80,
+            hoseLength: 120,
+            hoseTipOffset: 20, 
+            color: '#A9A9A9',
+            x: 0, 
+            y: 0, 
+            hoseX: 0, 
+            hoseY: 0 
+        };
+
+        // Setting canvas dimensions to be responsive
+        function resizeCanvas() {
+            const aspectRatio = 16 / 9;
+            const maxCanvasWidth = Math.min(window.innerWidth * 0.9, 800);
+            const availableHeight = window.innerHeight - (mainWrapper.offsetTop * 2) - (aquariumTable.offsetHeight) - 100; // Estimate for controls and padding
+            const maxCanvasHeight = Math.min(availableHeight * 0.8, 600);
+
+
+            let newWidth = maxCanvasWidth;
+            let newHeight = newWidth / aspectRatio;
+
+            if (newHeight > maxCanvasHeight) {
+                newHeight = maxCanvasHeight;
+                newWidth = newHeight * aspectRatio;
+            }
+
+            canvas.width = newWidth;
+            canvas.height = newHeight;
+
+
+            mainWrapper.style.width = `${canvas.width + 40}px`;
+            oxygenTank.x = canvas.width - oxygenTank.width - 10;
+            oxygenTank.y = canvas.height - oxygenTank.height - 10;
+            oxygenTank.hoseX = oxygenTank.x + oxygenTank.width / 2;
+            oxygenTank.hoseY = canvas.height - oxygenTank.hoseTipOffset; 
+        }
+
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
+
+        // --- Fish Class ---
+        class Fish {
+            constructor(x, y, size, emoji, speed, server) {
+                this.x = x;
+                this.y = y;
+                this.size = size;
+                this.emoji = emoji;
+                this.speed = speed;
+                this.baseSpeed = speed;
+                this.directionX = Math.random() < 0.5 ? 1 : -1;
+                this.directionY = (Math.random() - 0.5) * 0.5;
+                this.tailAngle = 0;
+                this.tailSpeed = 0.1 + Math.random() * 0.1;
+                this.targetX = null;
+                this.targetY = null;
+                this.fullness = 100;
+                this.turnFactor = 0.05;
+                this.server = server
+                this.isAlive = true;
+            }
+
+            update() {
+                if (this.isAlive) {
+                    // Food Following method
+                    if (this.targetX !== null && this.targetY !== null) {
+                        const dx = this.targetX - this.x;
+                        const dy = this.targetY - this.y;
+                        const distance = Math.sqrt(dx * dx + dy * dy);
+
+                        if (distance > 5) {
+                            this.x += (dx / distance) * this.speed * 1.5;
+                            this.y += (dy / distance) * this.speed * 1.5;
+                            this.directionX = dx > 0 ? 1 : -1;
+                        } else {
+                            this.targetX = null;
+                            this.targetY = null;
+                            this.speed = this.baseSpeed;
+                        }
+                    } else {
+                        // Normal random movement
+                        this.x += this.speed * this.directionX;
+                        this.y += this.speed * this.directionY;
+
+
+                        const margin = this.size;
+                        if (this.x < margin) {
+                            this.directionX += this.turnFactor;
+                        } else if (this.x > canvas.width - margin) {
+                            this.directionX -= this.turnFactor;
+                        }
+
+                        if (this.y < margin) {
+                            this.directionY += this.turnFactor;
+                        } else if (this.y > canvas.height - margin) {
+                            this.directionY -= this.turnFactor;
+                        }
+
+                        const magnitude = Math.sqrt(this.directionX * this.directionX + this.directionY * this.directionY);
+                        if (magnitude > 0) {
+                            this.directionX /= magnitude;
+                            this.directionY /= magnitude;
+                        }
+                    }
+                    this.tailAngle += this.tailSpeed;
+
+                    this.fullness = Math.max(0, this.fullness - 0.01);
+                    if (this.fullness < 20 && this.targetX === null) {
+                        this.speed = this.baseSpeed * 2;
+                    } else if (this.targetX === null) {
+                        this.speed = this.baseSpeed;
+                    }
+                }
+                else {
+                    // dead fish
+                    this.speed = this.baseSpeed / 5;
+                    this.x += this.speed * this.directionX;
+                    const margin = this.size;
+                    // float around
+                    if (this.x < margin) {
+                        this.directionX += this.turnFactor;
+                    } else if (this.x > canvas.width - margin) {
+                        this.directionX -= this.turnFactor;
+                    }
+
+                    // rise toward the surface
+                    const surfaceY = this.size; // "ceiling" just below the top
+                    if (this.y > surfaceY) {
+                        this.y -= this.speed;      // move up a bit each frame
+                    } else {
+                        // gentle bob around the surface
+                        this.y = surfaceY + Math.sin(Date.now() * 0.005 + this.x * 0.1) * 2;
+                    }
+                }
+            }
+
+            draw() {
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                let scaleX = this.directionX < 0 ? 1 : -1;
+                let scaleY = this.isAlive ? 1 : -1;
+                ctx.scale(scaleX, scaleY);
+
+                ctx.font = `${this.size}px sans-serif`; 
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(this.emoji, 0, 0);
+
+                ctx.restore();
+            }
+
+            setFoodTarget(foodX, foodY) {
+                this.targetX = foodX;
+                this.targetY = foodY;
+                this.speed = this.baseSpeed * 2; // Speeding up when chasing food
+            }
+
+            eatFood(amount) {
+                this.fullness = Math.min(100, this.fullness + amount);
+                this.targetX = null; 
+                this.targetY = null;
+                this.speed = this.baseSpeed; // Reset speed
+            }
+        }
+
+        // --- Bubble Class ---
+        class Bubble {
+            constructor(x, y, radius, speed) {
+                this.x = x;
+                this.y = y;
+                this.radius = radius;
+                this.speed = speed;
+                this.opacity = 1;
+            }
+
+            update() {
+                this.y -= this.speed;
+                this.opacity -= 0.005;
+
+                return this.y + this.radius > 0 && this.opacity > 0;
+            }
+
+            draw() {
+                ctx.save();
+                ctx.globalAlpha = this.opacity;
+                ctx.strokeStyle = 'rgba(200, 230, 255, 0.8)';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.restore();
+            }
+        }
+
+        // --- Seaweed Class ---
+        class Seaweed {
+            constructor(x, height, segments, color, swaySpeed) {
+                this.x = x;
+                this.height = height;
+                this.segments = segments;
+                this.color = color;
+                this.swaySpeed = swaySpeed;
+                this.swayOffset = Math.random() * Math.PI * 2;
+            }
+
+            draw(time) {
+                ctx.strokeStyle = this.color;
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.moveTo(this.x, canvas.height);
+
+                for (let i = 0; i <= this.segments; i++) {
+                    const segmentY = canvas.height - (i / this.segments) * this.height;
+                    const sway = Math.sin(time * this.swaySpeed + this.swayOffset + i * 0.5) * 5; // Waving effect
+                    ctx.lineTo(this.x + sway, segmentY);
+                }
+                ctx.stroke();
+            }
+        }
+
+        // --- Food Particle Class ---
+        class FoodParticle {
+            constructor(x, y, size, speedY) {
+                this.x = x;
+                this.y = y;
+                this.size = size;
+                this.speedY = speedY;
+                this.eaten = false;
+            }
+
+            update() {
+                if (!this.eaten) {
+                    this.y += this.speedY;
+                    if (this.y + this.size / 2 > canvas.height) {
+                        this.y = canvas.height - this.size / 2;
+                        this.speedY = 0; // Stop falling
+                    }
+                }
+            }
+
+            draw() {
+                if (!this.eaten) {
+                    ctx.fillStyle = '#FFD700';
+                    ctx.beginPath();
+                    ctx.arc(this.x, this.y, this.size / 2, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+        }
+
+        // --- Draw Tank Glass and Water Body ---
+        function drawTankGlass() {
+            ctx.save();
+
+            // 1. Drawing the main water body
+            ctx.fillStyle = 'rgba(0, 31, 63, 0.8)'; 
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // 2. Adding a subtle depth gradient to the water
+            const waterGradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+            waterGradient.addColorStop(0, 'rgba(0, 100, 150, 0.1)'); // Lighter at top
+            waterGradient.addColorStop(1, 'rgba(0, 31, 63, 0.3)');  // Darker at bottom
+            ctx.fillStyle = waterGradient;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // 3. Drawing the tank frame
+            const borderWidth = 8;
+            ctx.strokeStyle = '#4a5568';
+            ctx.lineWidth = borderWidth;
+            ctx.strokeRect(borderWidth / 2, borderWidth / 2, canvas.width - borderWidth, canvas.height - borderWidth);
+
+            // 4. Adding subtle inner shadow/highlight for glass effect
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)'; 
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(borderWidth, borderWidth);
+            ctx.lineTo(canvas.width - borderWidth, borderWidth);
+            ctx.stroke();
+
+            // Left highlight
+            ctx.beginPath();
+            ctx.moveTo(borderWidth, borderWidth);
+            ctx.lineTo(borderWidth, canvas.height - borderWidth);
+            ctx.stroke();
+
+            // Bottom shadow
+            ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)'; 
+            ctx.beginPath();
+            ctx.moveTo(borderWidth, canvas.height - borderWidth);
+            ctx.lineTo(canvas.width - borderWidth, canvas.height - borderWidth);
+            ctx.stroke();
+
+            // Right shadow
+            ctx.beginPath();
+            ctx.moveTo(canvas.width - borderWidth, borderWidth);
+            ctx.lineTo(canvas.width - borderWidth, canvas.height - borderWidth);
+            ctx.stroke();
+
+            // 5. Adding a reflection on the water surface 
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
+            ctx.fillRect(0, 0, canvas.width, 10);
+
+            ctx.restore();
+        }
+
+        // --- Water Waves Drawing Function ---
+        function drawWaterWaves(time) {
+            const waveAmplitude = 8; 
+            const waveFrequency = 0.015; 
+            const waveSpeed = 0.003; 
+            const waveOffset = time * waveSpeed;
+
+            ctx.beginPath();
+            ctx.fillStyle = 'rgba(100, 200, 255, 0.4)';
+            ctx.moveTo(0, waveAmplitude);
+
+            for (let x = 0; x <= canvas.width; x += 5) {
+                const y = waveAmplitude + Math.sin(x * waveFrequency + waveOffset) * waveAmplitude;
+                ctx.lineTo(x, y);
+            }
+            ctx.lineTo(canvas.width, 0);
+            ctx.lineTo(0, 0);
+            ctx.closePath();
+            ctx.fill();
+
+            // Adding a brighter highlight line at the very top of the wave
+            ctx.beginPath();
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+            ctx.lineWidth = 1.5;
+            ctx.moveTo(0, waveAmplitude);
+            for (let x = 0; x <= canvas.width; x += 5) {
+                const y = waveAmplitude + Math.sin(x * waveFrequency + waveOffset) * waveAmplitude;
+                ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+        }
+
+        // --- Oxygen Tank Drawing Function ---
+        function drawOxygenTank() {
+            // Tank body
+            ctx.fillStyle = oxygenTank.color;
+            ctx.strokeStyle = '#696969'; // DimGray
+            ctx.lineWidth = 2;
+            ctx.fillRect(oxygenTank.x, oxygenTank.y, oxygenTank.width, oxygenTank.height);
+            ctx.strokeRect(oxygenTank.x, oxygenTank.y, oxygenTank.width, oxygenTank.height);
+
+            // Tank top (rounded)
+            ctx.beginPath();
+            ctx.arc(oxygenTank.x + oxygenTank.width / 2, oxygenTank.y, oxygenTank.width / 2, Math.PI, 0);
+            ctx.fill();
+            ctx.stroke();
+
+            // Hose
+            ctx.strokeStyle = '#555555'; // Darker gray for hose
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(oxygenTank.x + oxygenTank.width / 2, oxygenTank.y + oxygenTank.height / 2); // Middle of tank
+            ctx.lineTo(oxygenTank.x + oxygenTank.width / 2, canvas.height - oxygenTank.hoseTipOffset); // Into the water
+            ctx.stroke();
+
+            // Hose tip (small circle where bubbles emerge)
+            ctx.fillStyle = '#FFFFFF';
+            ctx.beginPath();
+            ctx.arc(oxygenTank.hoseX, oxygenTank.hoseY, 3, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        async function refreshServerStates() {
+            const res = await fetch("/server-status.json", { cache: "no-store" });
+            if (!res.ok) {
+                fishes.forEach(fish => {
+                    fish.isActive = false;
+                })
+            };
+            const data = await res.json();
+            const statuses = data.statuses;
+
+            if (Date.now()/1000 - data.generated_at > 60) {
+                fishes.forEach(fish => {
+                    fish.isAlive = false;
+                })
+            }
+            else {
+                fishes.forEach(fish => {
+                    console.log(fish.server)
+                    console.log(statuses)
+                    const st = statuses.find((s) => s.id === fish.server.id)
+                    if (!st) return;
+                    fish.isAlive = (st.status === "up");
+                });
+            }
+        }
+
+        // --- Game State ---
+        const fishes = [];
+        const bubbles = [];
+        const seaweeds = [];
+        const foodParticles = [];
+        let foodInBottle = 100;
+        const maxFoodDrops = 5;
+        let lastHoveredFish = null;
+
+        // Initialize elements
+        function initAquarium() {
+            // Create fish using emojis
+            const fishEmojis = ['🐠', '🐡', '🐟', '🐙', '🦑', '🦐'];
+            loadServersFromYaml().then((result) => {
+                servers = result;
+                for (let i = 0; i < servers.length; i++) {
+                    const size = 30 + Math.random() * 20;
+                    const x = Math.random() * canvas.width;
+                    const y = Math.random() * canvas.height;
+                    const emoji = fishEmojis[Math.floor(Math.random() * fishEmojis.length)];
+                    const speed = 0.5 + Math.random() * 0.5;
+                    fishes.push(new Fish(x, y, size, emoji, speed, servers[i]));
+                }
+                canvas.addEventListener('mousemove', (e) => {
+                    const rect = canvas.getBoundingClientRect();
+                    const x = e.clientX - rect.left;
+                    const y = e.clientY - rect.top;
+
+                    let hoveredFish = null;
+
+                    for (const fish of fishes) {
+                        // Rough hitbox based on font size
+                        const halfW = fish.size * 0.6;
+                        const halfH = fish.size * 0.6;
+
+                        if (Math.abs(x - fish.x) < halfW && Math.abs(y - fish.y) < halfH) {
+                            hoveredFish = fish;
+                            break;
+                        }
+                    }
+
+                    if (hoveredFish && hoveredFish.server && hoveredFish.server.name && hoveredFish.server.name !== lastHoveredFish) {
+                        lastHoveredFish = hoveredFish;
+                        showMessage(hoveredFish.server.name);
+                    }
+                });
+
+            });
+
+            for (let i = 0; i < 12; i++) { 
+                const x = Math.random() * canvas.width;
+                const height = 50 + Math.random() * 100;
+                const segments = 5 + Math.floor(Math.random() * 5);
+                const color = `rgba(0, ${100 + Math.random() * 50}, 0, 0.8)`;
+                const swaySpeed = 0.01 + Math.random() * 0.02;
+                seaweeds.push(new Seaweed(x, height, segments, color, swaySpeed));
+            }
+        }
+
+        // Generate bubbles periodically from oxygen tank hose
+        setInterval(() => {
+            const x = oxygenTank.hoseX + (Math.random() - 0.5) * 10; 
+            const radius = 2 + Math.random() * 5;
+            const speed = 0.2 + Math.random() * 0.8; 
+            bubbles.push(new Bubble(x, oxygenTank.hoseY, radius, speed));
+        }, 150);
+
+        // Display a temporary message
+        function showMessage(msg, duration = 2000) {
+            messageBox.textContent = msg;
+            messageBox.style.display = 'block';
+            setTimeout(() => {
+                messageBox.style.display = 'none';
+            }, duration);
+        }
+
+        // Event listener for dropping food
+        dropFoodButton.addEventListener('click', () => {
+            if (foodInBottle > 0) {
+                if (foodParticles.length < maxFoodDrops) {
+                    const foodX = canvas.width / 2 + (Math.random() - 0.5) * 50; 
+                    const foodY = 0;
+                    const foodSize = 8 + Math.random() * 4;
+                    const foodSpeed = 1 + Math.random() * 0.5;
+                    foodParticles.push(new FoodParticle(foodX, foodY, foodSize, foodSpeed));
+                    foodInBottle = Math.max(0, foodInBottle - 5); 
+                    foodLevelDisplay.style.height = `${foodInBottle}%`;
+
+                    // Make hungry fish chase food
+                    fishes.forEach(fish => {
+                        if (fish.fullness < 70) { 
+                            fish.setFoodTarget(foodX, foodY);
+                        }
+                    });
+                } else {
+                    showMessage("Too much food already in the tank!");
+                }
+            } else {
+                showMessage("Out of fish food! Refill the bottle.");
+            }
+        });
+
+        // Event listener for refilling food
+        refillFoodButton.addEventListener('click', () => {
+            foodInBottle = 100; 
+            foodLevelDisplay.style.height = `${foodInBottle}%`;
+            showMessage("Food bottle refilled!");
+        });
+
+        // Main animation loop
+        function animate(time) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            drawTankGlass();
+            seaweeds.forEach(seaweed => seaweed.draw(time));
+            drawOxygenTank();
+
+            // Update and draw food particles
+            for (let i = foodParticles.length - 1; i >= 0; i--) {
+                const food = foodParticles[i];
+                food.update();
+                food.draw();
+
+                // Check for collision between fish and food
+                fishes.forEach(fish => {
+                    if (!food.eaten &&
+                        Math.abs(fish.x - food.x) < (fish.size / 2 + food.size / 2) &&
+                        Math.abs(fish.y - food.y) < (fish.size / 4 + food.size / 2)) { 
+                        fish.eatFood(20);
+                        food.eaten = true;
+                    }
+                });
+
+                // Remove eaten food or food that has settled at the bottom for too long
+                if (food.eaten || (food.speedY === 0 && food.y === canvas.height - food.size / 2)) {
+                    foodParticles.splice(i, 1);
+                }
+            }
+
+
+            // Update and draw fish
+            fishes.forEach(fish => {
+                fish.update();
+                fish.draw();
+            });
+
+            // Update and draw bubbles, filter out faded ones
+            for (let i = bubbles.length - 1; i >= 0; i--) {
+                if (bubbles[i].update()) {
+                    bubbles[i].draw();
+                } else {
+                    bubbles.splice(i, 1); 
+                }
+            }
+
+            // Draw water waves (on top of everything else for a layered effect)
+            drawWaterWaves(time);
+
+            requestAnimationFrame(animate); 
+        }
+
+        // Start the animation when the window loads
+        window.onload = function() {
+            initAquarium();
+            resizeCanvas(); 
+            animate(0);
+            setInterval(refreshServerStates, 5000);
+            foodLevelDisplay.style.height = `${foodInBottle}%`; 
+        };
+    </script>
+</body>
+</html>
+

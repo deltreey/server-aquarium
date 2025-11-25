@@ -42,12 +42,13 @@ check_postgres() {
 
 check_docker() {
   local name=$1
-  docker inspect -f '{{.State.Running}}' "$name" 2>/dev/null | grep -q true
+  ssh -o BatchMode=yes "$host" \
+    docker inspect -f '{{.State.Running}}' "$name" 2>/dev/null | grep -q true
 }
 
 echo '{' > "$TMP"
 echo "  \"generated_at\": $(date +%s)," >> "$TMP"
-echo '  "statuses": {' >> "$TMP"
+echo '  "statuses": [' >> "$TMP"
 first=true
 
 servers_len=$(yq '.servers | length' "$YAML")
@@ -58,6 +59,7 @@ for ((i=0; i<servers_len; i++)); do
     kind=$(yq -r ".servers[$i].kind" "$YAML")
     host=$(yq -r ".servers[$i].host // \"\"" "$YAML")
     port=$(yq -r ".servers[$i].port // \"\"" "$YAML")
+    container=$(yq -r ".servers[$i].container // \"\"" "$YAML")
 
     # Run your check
     case "$kind" in
@@ -82,6 +84,20 @@ for ((i=0; i<servers_len; i++)); do
                 status="down"
             fi
             ;;
+        postgres)
+            if check_postgres $host $port; then
+              status="up"
+            else
+              status="down"
+            fi
+            ;;
+        docker)
+            if check_docker $host $container; then
+              status="up"
+            else
+              status="down"
+            fi
+            ;;
 #        redis)
 #            if $check_redis $host $port; then
 #                status="up"
@@ -89,9 +105,9 @@ for ((i=0; i<servers_len; i++)); do
 #                status="down"
 #            fi
 #            ;;
-#        *)
-#            status="unknown"
-#            ;;
+        *)
+            status="unknown"
+            ;;
     esac
 
     # Add to JSON
@@ -101,9 +117,10 @@ for ((i=0; i<servers_len; i++)); do
         echo "," >> "$TMP"
     fi
 
-    echo "    \"${id}\": \"${status}\"" >> "$TMP"
+    printf '    { "id": "%s", "name": "%s", "status": "%s" }' \
+      "$id" "$name" "$status" >> "$TMP"
 done
 
 
-echo "} }" >> "$TMP"
+echo "] }" >> "$TMP"
 mv "$TMP" "$OUT"
