@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
-YAML="servers.yaml"
-OUT="server-status.json"
+YAML="/root/servers.yaml"
+OUT="/var/www/fish/server-status.json"
 TMP=$(mktemp)
 
 check_ping() {
@@ -41,10 +41,15 @@ check_postgres() {
 }
 
 check_docker() {
-  local name=$1
-  ssh -o BatchMode=yes "$host" \
-    docker inspect -f '{{.State.Running}}' "$name" 2>/dev/null | grep -q true
+  local host="$1"  # e.g. administrator@192.168.111.206
+  local container="$2"  # container name
+
+  ssh_output=$(ssh -i /home/administrator/core.key -o BatchMode=yes "$host" \
+    "docker inspect -f '{{.State.Running}}' \"$container\"" 2>&1)
+  echo "RAW SSH OUTPUT: '$ssh_output'" >&2
+  [[ "$ssh_output" == "true" ]]
 }
+
 
 echo '{' > "$TMP"
 echo "  \"generated_at\": $(date +%s)," >> "$TMP"
@@ -124,3 +129,5 @@ done
 
 echo "] }" >> "$TMP"
 mv "$TMP" "$OUT"
+
+chown www-data:www-data $OUT
