@@ -41,8 +41,8 @@ check_postgres() {
 }
 
 check_docker() {
-  local host="$1"  # e.g. administrator@192.168.111.206
-  local container="$2"  # container name
+  local host="$1"
+  local container="$2"
 
   ssh_output=$(ssh -i /home/administrator/core.key -o BatchMode=yes "$host" \
     "docker inspect -f '{{.State.Running}}' \"$container\"" 2>&1)
@@ -66,7 +66,6 @@ for ((i=0; i<servers_len; i++)); do
     port=$(yq -r ".servers[$i].port // \"\"" "$YAML")
     container=$(yq -r ".servers[$i].container // \"\"" "$YAML")
 
-    # Run your check
     case "$kind" in
         ping)
             if check_ping $host; then
@@ -115,7 +114,6 @@ for ((i=0; i<servers_len; i++)); do
             ;;
     esac
 
-    # Add to JSON
     if [ "$first" = true ]; then
         first=false
     else

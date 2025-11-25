@@ -19,5 +19,6 @@ servers:
     name: "Database"
   - id: "bot"
     kind: "docker"
+    host: "admin@192.168.1.1"
     container: "bot"
     name: "Bot Container"
