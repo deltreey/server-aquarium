@@ -203,18 +203,41 @@
             });
         }
 
+        function getDeadRatio() {
+            if (!fishes.length) return 0;
+
+            const deadCount = fishes.filter(fish => !fish.isAlive).length;
+            return deadCount / fishes.length;
+        }
+
+        function lerp(a, b, t) {
+            return a + (b - a) * t;
+        }
+
+        function mixColor(a, b, t) {
+            return {
+                r: Math.round(lerp(a.r, b.r, t)),
+                g: Math.round(lerp(a.g, b.g, t)),
+                b: Math.round(lerp(a.b, b.b, t)),
+                a: lerp(a.a, b.a, t),
+            };
+        }
+
+        function toRgba(c) {
+            return `rgba(${c.r}, ${c.g}, ${c.b}, ${c.a})`;
+        }
 
         // Oxygen tank properties
         const oxygenTank = {
             width: 40,
             height: 80,
             hoseLength: 120,
-            hoseTipOffset: 20, 
+            hoseTipOffset: 20,
             color: '#A9A9A9',
-            x: 0, 
-            y: 0, 
-            hoseX: 0, 
-            hoseY: 0 
+            x: 0,
+            y: 0,
+            hoseX: 0,
+            hoseY: 0
         };
 
         // Setting canvas dimensions to be responsive
@@ -241,7 +264,7 @@
             oxygenTank.x = canvas.width - oxygenTank.width - 10;
             oxygenTank.y = canvas.height - oxygenTank.height - 10;
             oxygenTank.hoseX = oxygenTank.x + oxygenTank.width / 2;
-            oxygenTank.hoseY = canvas.height - oxygenTank.hoseTipOffset; 
+            oxygenTank.hoseY = canvas.height - oxygenTank.hoseTipOffset;
         }
 
         resizeCanvas();
@@ -349,7 +372,7 @@
                 let scaleY = this.isAlive ? 1 : -1;
                 ctx.scale(scaleX, scaleY);
 
-                ctx.font = `${this.size}px sans-serif`; 
+                ctx.font = `${this.size}px sans-serif`;
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
                 ctx.fillText(this.emoji, 0, 0);
@@ -365,7 +388,7 @@
 
             eatFood(amount) {
                 this.fullness = Math.min(100, this.fullness + amount);
-                this.targetX = null; 
+                this.targetX = null;
                 this.targetY = null;
                 this.speed = this.baseSpeed; // Reset speed
             }
@@ -457,69 +480,88 @@
         }
 
         // --- Draw Tank Glass and Water Body ---
-        function drawTankGlass() {
+        function drawTankGlass(deadRatio) {
             ctx.save();
 
-            // 1. Drawing the main water body
-            ctx.fillStyle = 'rgba(0, 31, 63, 0.8)'; 
+            // make it ramp a bit slower so it doesn't go swampy at 10% failure
+            const t = Math.pow(deadRatio, 0.7); // tweak exponent if you want
+
+            // Main water body: deep blue → murky green
+            const healthyMain = { r: 0,  g: 31,  b: 63,  a: 0.8 };
+            const deadMain    = { r: 10, g: 90,  b: 20,  a: 0.85 };
+            const mainColor   = mixColor(healthyMain, deadMain, t);
+
+            ctx.fillStyle = toRgba(mainColor);
             ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-            // 2. Adding a subtle depth gradient to the water
+            // Water depth gradient: blue-ish → green-ish
+            const healthyTop = { r: 0,   g: 100, b: 150, a: 0.1 };
+            const deadTop    = { r: 40,  g: 130, b: 40,  a: 0.25 };
+            const healthyBot = { r: 0,   g: 31,  b: 63,  a: 0.3 };
+            const deadBot    = { r: 20,  g: 80,  b: 20,  a: 0.45 };
+
+            const topColor = mixColor(healthyTop, healthyTop, t); // could be same or slightly greener
+            const botColor = mixColor(healthyBot, deadBot, t);
+
             const waterGradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
-            waterGradient.addColorStop(0, 'rgba(0, 100, 150, 0.1)'); // Lighter at top
-            waterGradient.addColorStop(1, 'rgba(0, 31, 63, 0.3)');  // Darker at bottom
+            waterGradient.addColorStop(0, toRgba(topColor));
+            waterGradient.addColorStop(1, toRgba(botColor));
             ctx.fillStyle = waterGradient;
             ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-            // 3. Drawing the tank frame
+            // Tank frame + glass highlights stay as-is
             const borderWidth = 8;
             ctx.strokeStyle = '#4a5568';
             ctx.lineWidth = borderWidth;
             ctx.strokeRect(borderWidth / 2, borderWidth / 2, canvas.width - borderWidth, canvas.height - borderWidth);
 
-            // 4. Adding subtle inner shadow/highlight for glass effect
-            ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)'; 
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
             ctx.lineWidth = 1;
             ctx.beginPath();
             ctx.moveTo(borderWidth, borderWidth);
             ctx.lineTo(canvas.width - borderWidth, borderWidth);
             ctx.stroke();
 
-            // Left highlight
             ctx.beginPath();
             ctx.moveTo(borderWidth, borderWidth);
             ctx.lineTo(borderWidth, canvas.height - borderWidth);
             ctx.stroke();
 
-            // Bottom shadow
-            ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)'; 
+            ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)';
             ctx.beginPath();
             ctx.moveTo(borderWidth, canvas.height - borderWidth);
             ctx.lineTo(canvas.width - borderWidth, canvas.height - borderWidth);
             ctx.stroke();
 
-            // Right shadow
             ctx.beginPath();
             ctx.moveTo(canvas.width - borderWidth, borderWidth);
             ctx.lineTo(canvas.width - borderWidth, canvas.height - borderWidth);
             ctx.stroke();
 
-            // 5. Adding a reflection on the water surface 
+            // reflection, unchanged
             ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
             ctx.fillRect(0, 0, canvas.width, 10);
 
             ctx.restore();
         }
 
+
         // --- Water Waves Drawing Function ---
-        function drawWaterWaves(time) {
-            const waveAmplitude = 8; 
-            const waveFrequency = 0.015; 
-            const waveSpeed = 0.003; 
+        function drawWaterWaves(time, deadRatio) {
+            const waveAmplitude = 8;
+            const waveFrequency = 0.015;
+            const waveSpeed = 0.003;
             const waveOffset = time * waveSpeed;
 
+            const t = Math.pow(deadRatio, 0.7);
+
+            // Wave color: bright blue → sickly aqua/green
+            const healthyWave = { r: 100, g: 200, b: 255, a: 0.4 };
+            const deadWave    = { r: 80,  g: 220, b: 140, a: 0.5 };
+            const waveColor   = mixColor(healthyWave, deadWave, t);
+
             ctx.beginPath();
-            ctx.fillStyle = 'rgba(100, 200, 255, 0.4)';
+            ctx.fillStyle = toRgba(waveColor);
             ctx.moveTo(0, waveAmplitude);
 
             for (let x = 0; x <= canvas.width; x += 5) {
@@ -531,7 +573,7 @@
             ctx.closePath();
             ctx.fill();
 
-            // Adding a brighter highlight line at the very top of the wave
+            // Highlight line can stay white so you still read it as 'water'
             ctx.beginPath();
             ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
             ctx.lineWidth = 1.5;
@@ -542,6 +584,7 @@
             }
             ctx.stroke();
         }
+
 
         // --- Oxygen Tank Drawing Function ---
         function drawOxygenTank() {
@@ -583,15 +626,13 @@
             const data = await res.json();
             const statuses = data.statuses;
 
-            if (Date.now()/1000 - data.generated_at > 60) {
+            if (Date.now()/1000 - data.generated_at > 180) {
                 fishes.forEach(fish => {
                     fish.isAlive = false;
                 })
             }
             else {
                 fishes.forEach(fish => {
-                    console.log(fish.server)
-                    console.log(statuses)
                     const st = statuses.find((s) => s.id === fish.server.id)
                     if (!st) return;
                     fish.isAlive = (st.status === "up");
@@ -648,7 +689,7 @@
 
             });
 
-            for (let i = 0; i < 12; i++) { 
+            for (let i = 0; i < 12; i++) {
                 const x = Math.random() * canvas.width;
                 const height = 50 + Math.random() * 100;
                 const segments = 5 + Math.floor(Math.random() * 5);
@@ -660,9 +701,9 @@
 
         // Generate bubbles periodically from oxygen tank hose
         setInterval(() => {
-            const x = oxygenTank.hoseX + (Math.random() - 0.5) * 10; 
+            const x = oxygenTank.hoseX + (Math.random() - 0.5) * 10;
             const radius = 2 + Math.random() * 5;
-            const speed = 0.2 + Math.random() * 0.8; 
+            const speed = 0.2 + Math.random() * 0.8;
             bubbles.push(new Bubble(x, oxygenTank.hoseY, radius, speed));
         }, 150);
 
@@ -679,17 +720,17 @@
         dropFoodButton.addEventListener('click', () => {
             if (foodInBottle > 0) {
                 if (foodParticles.length < maxFoodDrops) {
-                    const foodX = canvas.width / 2 + (Math.random() - 0.5) * 50; 
+                    const foodX = canvas.width / 2 + (Math.random() - 0.5) * 50;
                     const foodY = 0;
                     const foodSize = 8 + Math.random() * 4;
                     const foodSpeed = 1 + Math.random() * 0.5;
                     foodParticles.push(new FoodParticle(foodX, foodY, foodSize, foodSpeed));
-                    foodInBottle = Math.max(0, foodInBottle - 5); 
+                    foodInBottle = Math.max(0, foodInBottle - 5);
                     foodLevelDisplay.style.height = `${foodInBottle}%`;
 
                     // Make hungry fish chase food
                     fishes.forEach(fish => {
-                        if (fish.fullness < 70) { 
+                        if (fish.fullness < 70) {
                             fish.setFoodTarget(foodX, foodY);
                         }
                     });
@@ -703,7 +744,7 @@
 
         // Event listener for refilling food
         refillFoodButton.addEventListener('click', () => {
-            foodInBottle = 100; 
+            foodInBottle = 100;
             foodLevelDisplay.style.height = `${foodInBottle}%`;
             showMessage("Food bottle refilled!");
         });
@@ -711,7 +752,8 @@
         // Main animation loop
         function animate(time) {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-            drawTankGlass();
+            const deadRatio = getDeadRatio();
+            drawTankGlass(deadRatio);
             seaweeds.forEach(seaweed => seaweed.draw(time));
             drawOxygenTank();
 
@@ -725,7 +767,7 @@
                 fishes.forEach(fish => {
                     if (!food.eaten &&
                         Math.abs(fish.x - food.x) < (fish.size / 2 + food.size / 2) &&
-                        Math.abs(fish.y - food.y) < (fish.size / 4 + food.size / 2)) { 
+                        Math.abs(fish.y - food.y) < (fish.size / 4 + food.size / 2)) {
                         fish.eatFood(20);
                         food.eaten = true;
                     }
@@ -749,23 +791,23 @@
                 if (bubbles[i].update()) {
                     bubbles[i].draw();
                 } else {
-                    bubbles.splice(i, 1); 
+                    bubbles.splice(i, 1);
                 }
             }
 
             // Draw water waves (on top of everything else for a layered effect)
-            drawWaterWaves(time);
+            drawWaterWaves(time, deadRatio);
 
-            requestAnimationFrame(animate); 
+            requestAnimationFrame(animate);
         }
 
         // Start the animation when the window loads
         window.onload = function() {
             initAquarium();
-            resizeCanvas(); 
+            resizeCanvas();
             animate(0);
-            setInterval(refreshServerStates, 5000);
-            foodLevelDisplay.style.height = `${foodInBottle}%`; 
+            setInterval(refreshServerStates, 10000);
+            foodLevelDisplay.style.height = `${foodInBottle}%`;
         };
     </script>
 </body>
