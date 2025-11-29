@@ -7,6 +7,10 @@ but I think I'd rather have an aquarium to display my server statuses.
 
 -----
 
+![Screenshot](documentation/screenshot.png)
+
+-----
+
 Host the HTML file on the web.  Dump the `server-status.json` file
 where that same website can access it (preferably beside `index.html`).
 

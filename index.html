@@ -622,7 +622,7 @@
                 fishes.forEach(fish => {
                     fish.isActive = false;
                 })
-            };
+            }
             const data = await res.json();
             const statuses = data.statuses;
 
@@ -652,7 +652,7 @@
         // Initialize elements
         function initAquarium() {
             // Create fish using emojis
-            const fishEmojis = ['🐠', '🐡', '🐟', '🐙', '🦑', '🦐'];
+            const fishEmojis = ['🐠', '🐟', '🐡', '🦈', '🐬', '🐙', '🦑', '🦐', '🦞', '🦀', '🐋', '🐢', '🪼', '🐚'];
             loadServersFromYaml().then((result) => {
                 servers = result;
                 for (let i = 0; i < servers.length; i++) {
